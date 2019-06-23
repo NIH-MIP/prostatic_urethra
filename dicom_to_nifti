@@ -6,6 +6,8 @@ import re
 import dicom2nifti
 import shutil
 
+#author @t_sanf
+
 
 class Dicom2Nifti():
 
