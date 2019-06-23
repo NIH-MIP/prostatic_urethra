@@ -1,0 +1,192 @@
+#Authors:
+#@t_sanf & @DrSHarmon 
+
+require(foreign)
+require(ggplot2)
+require(MASS)
+require(Hmisc)
+require(reshape2)
+require(plyr)
+
+
+##########################################################
+## data loading functions to population and subgroups  ###
+##########################################################
+
+#load data for all patients
+load_data<-function(){
+  dataset<-read.csv('path to data')
+  return(dataset)
+}
+
+#load data for patients who have IPSS scores
+data_with_IPSS<-function(){
+  data=load_data()
+  data_w_IPSS=data[complete.cases(data[,'IPSS']),]
+  print(paste("number of patients with IPSS is ",length(rownames(data_w_IPSS))))
+  return(data_w_IPSS)
+}
+
+#data with overall+all IPSS scores
+data_with_full_IPSS<-function(){
+  data=load_data()
+  data_w_full_IPSS=data[complete.cases(data[,'weak_stream']),]
+  print(paste("number of patient with full IPSS  is ",length(rownames(data_w_full_IPSS))))
+  return(data_w_full_IPSS)
+}
+
+#data for patients who have IPSS scores and alpha blocker status
+data_with_IPSS_alpha<-function(){
+  data=load_data()
+  data_w_IPSS=data[complete.cases(data[,'IPSS']),]
+  data_w_IPSS_alpha=data[complete.cases(data[,'alpha.blocker']),]
+  print(paste("number of patient with IPSS and alpha",length(rownames(data_w_IPSS_alpha))))
+  return(data_w_IPSS_alpha)
+}
+
+#load data for patients who are on alpha blockers
+on_alpha<-function(){
+    data=load_data()
+    on_alpha=data[data[,'alpha.blocker']==1,]
+    print(paste("number of patient on alpha  is ",length(rownames(on_alpha))))
+    return(on_alpha)
+}
+
+#load data for patients who are not on alpha blockers
+off_alpha<-function(){
+  data=load_data()
+  off_alpha=data[data[,'alpha.blocker']==0,]
+  print(paste("number of patients not on alpha  is ",length(rownames(off_alpha))))
+  return(off_alpha)
+}
+
+
+######################
+## Data Exploration ##
+######################
+
+summary_clin_vars<-function(){
+  cols=c('PSA','IPSS','wp_vol','tz_vol','sag_length_pc','cor_length_pc','threeD_length_pc','sag_angle_maxdist','cor_angle_maxdist','dist_sag_tz_vol_posterior','dist_sag_tz_ratio','dist_sag_wp_vol_posterior','dist_sag_wp_ratio')
+  
+  data=off_alpha()
+  
+  for (i in 1:length(cols)){
+    col_loop=cols[i]
+    vector<-data[,col_loop]
+    complete_vector<-vector[complete.cases(vector)]
+    
+    print(paste("For",col_loop,":"))
+    print(paste("median is: ", median(complete_vector)))
+    print(paste("range is :",min(complete_vector),'-',max(complete_vector)))
+    print(paste("IQR is :",quantile(complete_vector,0.25),'-',quantile(complete_vector,0.75)))
+    print('-----------------------------')
+  }
+}
+
+
+total_binary<-function(){
+  data<-load_data()
+  cols=c('alpha.blocker','X5.ARI_use','PD5','ER_coil_present')
+  
+  for (i in 1:length(cols)){
+    col=cols[i]
+    variable=data[,col] #binary variable
+    data_complete=data[complete.cases(data[,col]),]
+    total=sum(data_complete[,col])
+    print(paste("total of ",length(rownames(data))," patients"))
+    print(paste("For variable ",col))
+    print(paste("Total of ",length(variable)-length(rownames(data_complete)),"patients without variable ", col ," listed"))
+    print(paste("total of ",total, "out of ", length(rownames(data_complete)) ,"complete cases"))
+  }
+}
+
+count_alpha_blockers<-function(){
+  IPSS_data<-data_with_IPSS()
+  
+  alpha_count=count(IPSS_data,'name_alpha_blocker')
+  print(alpha_count)
+}
+
+
+
+
+#################
+## Univariable ##
+#################
+
+univariable_analysis<-function(){
+
+  #change this to evaluate sub-groups
+  data=data_with_IPSS()
+  
+  
+  colnames=c("wp_vol","tz_vol","sag_length_pc","cor_length_pc","threeD_length_pc","sag_angle_infl_nlize","cor_angle_infl_nlize","dist_sag_tz_vol_posterior","dist_sag_wp_vol_posterior","dist_sag_wp_ratio",'dist_sag_tz_ratio')
+  
+  #do univariate regression on each variable individually
+  for (i in 1:length(colnames)) {
+    
+    #make model
+    col=colnames[i]
+    m<-polr(factor(IPSS_severity) ~ scale(data[,col]) , data = data, Hess=TRUE)
+
+    #get data out of object
+    ctable <- coef(summary(m))
+    exp_ctable<-exp(coef(summary(m)))
+    p <- pnorm(abs(ctable[, "t value"]), lower.tail = FALSE) * 2
+    ctable <- cbind(ctable, "p value" = p)
+    ci <- confint(m,level = 0.95)
+    OR=exp(cbind(OR = coef(m), ci))
+    
+    #print values
+    print(col)
+    print(ctable)
+    print(OR)
+
+    }
+}
+
+#####################
+### Multivariable ###
+#####################
+
+#ordinal regresion
+ordinal_reg<-function(){
+  
+  #change this to evaluate sub-groups
+  data=on_alpha()
+  
+  m <- polr(factor(IPSS_severity) ~ scale(wp_vol) + scale(tz_vol)+ scale(threeD_length_pc) + scale(sag_angle_infl_nlize)+ scale(dist_sag_wp_vol_posterior) + scale(dist_sag_wp_ratio), data = data, Hess=TRUE)
+  ctable <- coef(summary(m))
+  p <- pnorm(abs(ctable[, "t value"]), lower.tail = FALSE) * 2
+  ctable <- cbind(ctable, "p value" = p)
+  ci <- confint(m,level = 0.95)
+  OR=exp(cbind(OR = coef(m), ci))
+  print(ctable)
+  print(OR)
+}
+
+#Parsimonious 
+pars_model<-function(){
+  library("survival", "KMsurv", "Hmisc")
+  
+  #change this to evaluate sub-groups
+  data=data_with_IPSS()
+  
+  m<- polr(factor(IPSS_severity) ~ scale(wp_vol) + scale(tz_vol)+ scale(threeD_length_pc) + scale(sag_angle_infl_nlize)+ scale(dist_sag_wp_vol_posterior) + scale(dist_sag_wp_ratio), data = data, Hess=TRUE)
+
+  #perform BIC selection
+  n <- dim(data)[1]
+  print(n)
+  multi.BIC <- step(m, k=log(n), direction = "backward")
+  
+  print(summary(multi.BIC))
+}
+
+
+
+
+
+
+
+
+
