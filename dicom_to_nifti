@@ -1,0 +1,96 @@
+from parsing_VOI import *
+import pydicom
+import math
+import nibabel
+import re
+import dicom2nifti
+import shutil
+
+
+class Dicom2Nifti():
+
+    def __init__(self):
+        self.basePATH = 'path to folder including sub-folders'
+        self.databases=['sub-folders']
+
+    def dicom_to_nifti(self,t2_only=False):
+        '''
+        convert all dicom files in each database to .nifti format
+        :return:
+        '''
+
+        databases = self.databases
+
+        if t2_only==True:
+            series_all=['t2']
+        else:
+            series_all=['t2','adc','highb']
+
+        exception_logger=[]
+        for database in databases:
+            for patient in self.check_for_nifti_completion():
+                print("converting files to nifti for patient {}".format(patient))
+
+                #make nifti file if one does not already exist
+                if not os.path.exists(os.path.join(self.basePATH, database, patient, 'nifti')):
+                    os.mkdir(os.path.join(self.basePATH, database, patient, 'nifti'))
+
+                for series in series_all:
+                    #account for aligned data structure
+                    if series=='t2':
+                        dicom_name = series; nifti_name = series
+
+                    if series=='adc' or series=='highb':
+                        nifti_name=series
+                        dicom_name = os.path.join(series, 'aligned')
+
+                    #make folder if not already made:
+                    if not os.path.exists(os.path.join(self.basePATH,database,patient,'nifti',nifti_name)):
+                        os.mkdir(os.path.join(self.basePATH,database,patient,'nifti',nifti_name))
+
+                    dicom_directory=os.path.join(self.basePATH,database,patient,'dicoms',dicom_name)
+                    nifti_directory=os.path.join(self.basePATH, database, patient, 'nifti', nifti_name)
+
+                    dicom2nifti.convert_directory(dicom_directory, nifti_directory, reorient=False)
+
+        print("the following patients still need to be processed {}".format(exception_logger))
+
+
+    def check_for_nifti_completion(self):
+        '''iterate over files and check if files have been converted from dicom to nifti format for all series'''
+
+        need_to_process=[]
+        for database in self.databases:
+            for patient in os.listdir(os.path.join(self.basePATH,database)):
+                if not os.path.exists(os.path.join(self.basePATH, database, patient, 'nifti')):
+                    need_to_process+=[patient]
+
+                elif os.path.exists(os.path.join(self.basePATH, database, patient, 'nifti')):
+                    for val in ['t2', 'adc', 'highb']:
+                        file=os.path.join(self.basePATH, database, patient, 'nifti')
+                        if not os.path.isdir(os.path.join(file,val)):
+                            need_to_process += [patient]
+                        elif os.path.isdir(os.path.join(file,val)):
+                            if len(os.listdir(os.path.join(file, val))) == 0:
+                                need_to_process += [patient]
+
+                print("patient {} has already had dicoms converted to nifti".format(patient))
+
+            print('total of {} patients to convert to nifti masks'.format(len(set(need_to_process))))
+            return set(need_to_process)
+
+    def remove_nifti_files(self,database):
+        '''iterate over files and remove emtpy nifti files (if there is an error)'''
+
+        need_to_process=[]
+        for patient in os.listdir(os.path.join(self.basePATH,database)):
+            print(patient)
+            if os.path.exists(os.path.join(self.basePATH, database, patient, 'nifti')):
+                shutil.rmtree(os.path.join(self.basePATH, database, patient, 'nifti'))
+                print('removing data for patient {}'.format(patient))
+
+
+
+if __name__=='__main__':
+    c=Dicom2Nifti()
+    c.dicom_to_nifti()
